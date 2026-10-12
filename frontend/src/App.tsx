@@ -1,122 +1,419 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+const API_URL = "http://localhost:8000";
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+interface KnowledgeItem {
+id: number;
+title: string;
+item_type: "note" | "url";
+source_url: string | null;
+created_at: string;
 }
 
-export default App
+interface Source {
+item_id: number;
+title: string;
+source_url: string | null;
+snippet: string;
+relevance_score: number;
+}
+
+interface QueryResult {
+question: string;
+answer: string;
+sources: Source[];
+}
+
+function App() {
+const [items, setItems] = useState<KnowledgeItem[]>([]);
+const [itemType, setItemType] = useState<"note" | "url">("note");
+const [title, setTitle] = useState("");
+const [content, setContent] = useState("");
+const [url, setUrl] = useState("");
+const [question, setQuestion] = useState("");
+const [result, setResult] = useState<QueryResult | null>(null);
+const [loading, setLoading] = useState(false);
+const [asking, setAsking] = useState(false);
+const [error, setError] = useState("");
+const [message, setMessage] = useState("");
+
+async function loadItems(): Promise<void> {
+try {
+const response = await fetch(`${API_URL}/items`);
+
+  if (!response.ok) {
+    throw new Error("Could not load saved items.");
+  }
+
+  const data: KnowledgeItem[] = await response.json();
+  setItems(data);
+  setError("");
+} catch {
+  setError(
+    "Cannot connect to the backend. Make sure FastAPI is running at http://localhost:8000.",
+  );
+}
+
+
+}
+
+useEffect(() => {
+void loadItems();
+}, []);
+
+async function handleIngest(
+event: FormEvent<HTMLFormElement>,
+): Promise<void> {
+event.preventDefault();
+setLoading(true);
+setError("");
+setMessage("");
+
+
+const payload =
+  itemType === "note"
+    ? { item_type: "note", title: title.trim(), content: content.trim() }
+    : {
+        item_type: "url",
+        title: title.trim() || undefined,
+        url: url.trim(),
+      };
+
+try {
+  const response = await fetch(`${API_URL}/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data: unknown = await response.json();
+
+  if (!response.ok) {
+    const detail =
+      typeof data === "object" &&
+      data !== null &&
+      "detail" in data &&
+      typeof data.detail === "string"
+        ? data.detail
+        : "Could not save this item.";
+
+    throw new Error(detail);
+  }
+
+  setMessage("Knowledge saved successfully.");
+  setTitle("");
+  setContent("");
+  setUrl("");
+  await loadItems();
+} catch (err: unknown) {
+  setError(
+    err instanceof Error ? err.message : "Something went wrong.",
+  );
+} finally {
+  setLoading(false);
+}
+
+
+}
+
+async function handleQuery(
+event: FormEvent<HTMLFormElement>,
+): Promise<void> {
+event.preventDefault();
+setAsking(true);
+setError("");
+setMessage("");
+setResult(null);
+
+try {
+  const response = await fetch(`${API_URL}/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: question.trim() }),
+  });
+
+  const data: unknown = await response.json();
+
+  if (!response.ok) {
+    const detail =
+      typeof data === "object" &&
+      data !== null &&
+      "detail" in data &&
+      typeof data.detail === "string"
+        ? data.detail
+        : "Could not search your knowledge.";
+
+    throw new Error(detail);
+  }
+
+  setResult(data as QueryResult);
+} catch (err: unknown) {
+  setError(
+    err instanceof Error ? err.message : "Something went wrong.",
+  );
+} finally {
+  setAsking(false);
+}
+
+
+}
+
+return ( <main className="app-shell"> <header className="topbar"> <a className="brand" href="/"> <span className="brand-mark">K</span> <span>Knowledge Inbox</span> </a> <span className="status"> <span className="status-dot" />
+Your personal knowledge space </span> </header>
+
+  <section className="hero">
+    <p className="eyebrow">TURIUM AI · KNOWLEDGE INBOX</p>
+    <h1>
+      Your knowledge,
+      <br />
+      <span>ready when you need it.</span>
+    </h1>
+    <p className="hero-copy">
+      Save notes and web pages in one place. Ask questions and discover
+      relevant information with source snippets you can verify.
+    </p>
+  </section>
+
+  <section className="workspace">
+    <div className="panel">
+      <div className="panel-heading">
+        <div>
+          <p className="section-label">COLLECT</p>
+          <h2>Add to your knowledge</h2>
+        </div>
+        <span className="heading-icon">+</span>
+      </div>
+
+      <div className="tabs">
+        <button
+          type="button"
+          className={itemType === "note" ? "tab active" : "tab"}
+          onClick={() => setItemType("note")}
+        >
+          Write a note
+        </button>
+        <button
+          type="button"
+          className={itemType === "url" ? "tab active" : "tab"}
+          onClick={() => setItemType("url")}
+        >
+          Save a URL
+        </button>
+      </div>
+
+      <form className="form-stack" onSubmit={handleIngest}>
+        <label htmlFor="title">Title (optional)</label>
+        <input
+          id="title"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder="Give it a memorable name"
+          maxLength={300}
+        />
+
+        {itemType === "note" ? (
+          <>
+            <label htmlFor="content">Your note</label>
+            <textarea
+              id="content"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Capture an idea, insight, or something you want to remember..."
+              rows={6}
+              maxLength={50000}
+              required
+            />
+          </>
+        ) : (
+          <>
+            <label htmlFor="url">Webpage URL</label>
+            <input
+              id="url"
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://example.com/article"
+              required
+            />
+            <p className="field-hint">
+              Use a publicly accessible webpage.
+            </p>
+          </>
+        )}
+
+        <button
+          className="primary-button"
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? "Saving..." : "Save to inbox"} <span>→</span>
+        </button>
+      </form>
+    </div>
+
+    <div className="panel">
+      <div className="panel-heading">
+        <div>
+          <p className="section-label">RETRIEVE</p>
+          <h2>Ask your knowledge</h2>
+        </div>
+        <span className="heading-icon">✳</span>
+      </div>
+
+      <p className="panel-description">
+        Search your saved notes and webpages using natural language.
+      </p>
+
+      <form className="form-stack" onSubmit={handleQuery}>
+        <label htmlFor="question">What would you like to know?</label>
+        <textarea
+          id="question"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="For example: What did I save about RAG?"
+          rows={4}
+          minLength={2}
+          maxLength={1000}
+          required
+        />
+        <button
+          className="primary-button"
+          type="submit"
+          disabled={asking}
+        >
+          {asking ? "Searching..." : "Find answers"} <span>→</span>
+        </button>
+      </form>
+
+      {result !== null ? (
+        <div className="answer-section">
+          <p className="section-label">SEARCH RESULTS</p>
+          <h3>{result.answer}</h3>
+
+          {result.sources.length === 0 ? (
+            <p className="muted">No matching passages were found.</p>
+          ) : (
+            result.sources.map((source, index) => (
+              <article
+                className="source-card"
+                key={`${source.item_id}-${index}`}
+              >
+                <div className="source-heading">
+                  <span className="source-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <strong>{source.title}</strong>
+                </div>
+
+                <p>{source.snippet}</p>
+
+                <div className="source-footer">
+                  <span>
+                    Relevance:{" "}
+                    {(source.relevance_score * 100).toFixed(1)}%
+                  </span>
+                  {source.source_url !== null && (
+                    <a
+                      href={source.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open source ↗
+                    </a>
+                  )}
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="query-hint">
+          <span>✦</span>
+          <p>
+            Search results include relevant passages from your saved
+            knowledge.
+          </p>
+        </div>
+      )}
+    </div>
+  </section>
+
+  {(error !== "" || message !== "") && (
+    <div
+      className={error !== "" ? "notice error-notice" : "notice success-notice"}
+      role="status"
+    >
+      {error || message}
+    </div>
+  )}
+
+  <section className="library-section">
+    <div className="library-heading">
+      <div>
+        <p className="section-label">YOUR LIBRARY</p>
+        <h2>
+          Saved knowledge <span className="count">{items.length}</span>
+        </h2>
+      </div>
+      <button
+        className="refresh-button"
+        type="button"
+        onClick={() => void loadItems()}
+      >
+        ↻ Refresh
+      </button>
+    </div>
+
+    {items.length === 0 ? (
+      <div className="empty-state">
+        <span>▤</span>
+        <h3>Your inbox is ready</h3>
+        <p>
+          Save your first note or webpage to start building your knowledge
+          library.
+        </p>
+      </div>
+    ) : (
+      <div className="items-grid">
+        {items.map((item) => (
+          <article className="item-card" key={item.id}>
+            <div className="item-topline">
+              <span className={`type-tag ${item.item_type}`}>
+                {item.item_type === "note" ? "NOTE" : "WEB PAGE"}
+              </span>
+              <span className="item-date">
+                {new Date(item.created_at).toLocaleDateString()}
+              </span>
+            </div>
+
+            <h3>{item.title}</h3>
+
+            {item.source_url !== null && (
+              <a
+                className="item-link"
+                href={item.source_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {item.source_url} ↗
+              </a>
+            )}
+          </article>
+        ))}
+      </div>
+    )}
+  </section>
+
+  <footer className="footer">
+    <span>Knowledge Inbox</span>
+    <span>Save thoughtfully. Find instantly.</span>
+  </footer>
+</main>
+
+
+);
+}
+
+export default App;
