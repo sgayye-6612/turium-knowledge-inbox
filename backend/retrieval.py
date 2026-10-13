@@ -1,3 +1,4 @@
+
 from functools import lru_cache
 
 import numpy as np
@@ -6,12 +7,18 @@ from sentence_transformers import SentenceTransformer
 
 @lru_cache(maxsize=1)
 def get_model():
-    # Downloads the model on first use.
+    """Load and cache the sentence-transformer model."""
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def split_into_chunks(text: str, chunk_size: int = 800, overlap: int = 150):
+def split_into_chunks(
+    text: str,
+    chunk_size: int = 800,
+    overlap: int = 150,
+) -> list[str]:
+    """Split text into overlapping chunks."""
     text = " ".join(text.split())
+
     if not text:
         return []
 
@@ -30,22 +37,42 @@ def split_into_chunks(text: str, chunk_size: int = 800, overlap: int = 150):
     return chunks
 
 
-def retrieve_relevant_chunks(question: str, items: list, top_k: int = 3):
-    model = get_model()
+def retrieve_relevant_chunks(
+    question: str,
+    items: list,
+    top_k: int = 3,
+) -> list[dict]:
+    """Retrieve the most relevant unique passages for a question."""
     passages = []
+    seen_content = set()
 
     for item in items:
         for chunk in split_into_chunks(item.content):
-            passages.append({
-                "item_id": item.id,
-                "title": item.title,
-                "source_url": item.source_url,
-                "item_type": item.item_type,
-                "text": chunk,
-            })
+            normalized_content = chunk.casefold().strip()
+
+            if not normalized_content:
+                continue
+
+            # Avoid returning identical passages from duplicate notes.
+            if normalized_content in seen_content:
+                continue
+
+            seen_content.add(normalized_content)
+
+            passages.append(
+                {
+                    "item_id": item.id,
+                    "title": item.title,
+                    "source_url": item.source_url,
+                    "item_type": item.item_type,
+                    "text": chunk,
+                }
+            )
 
     if not passages:
         return []
+
+    model = get_model()
 
     question_embedding = model.encode(
         [question],
@@ -53,7 +80,7 @@ def retrieve_relevant_chunks(question: str, items: list, top_k: int = 3):
     )[0]
 
     passage_embeddings = model.encode(
-        [p["text"] for p in passages],
+        [passage["text"] for passage in passages],
         normalize_embeddings=True,
     )
 
@@ -64,9 +91,12 @@ def retrieve_relevant_chunks(question: str, items: list, top_k: int = 3):
 
     for index in best_indices:
         passage = passages[int(index)]
-        results.append({
-            **passage,
-            "score": round(float(scores[index]), 4),
-        })
+
+        results.append(
+            {
+                **passage,
+                "score": round(float(scores[index]), 4),
+            }
+        )
 
     return results
