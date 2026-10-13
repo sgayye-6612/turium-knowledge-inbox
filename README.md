@@ -1,76 +1,85 @@
+
 # Turium AI Knowledge Inbox
 
-A full-stack knowledge management application that lets users save notes and public webpages, search saved content semantically, and ask questions with source snippets.
+A full-stack AI knowledge management application for saving notes and public webpages, retrieving relevant information semantically, and answering questions with source citations.
 
 ## Features
 
-* Save notes and public HTML webpages.
-* Extract readable text from webpages.
-* Store knowledge items in SQLite.
-* Retrieve relevant passages using Sentence Transformers.
-* Generate grounded answers with a local Ollama model.
-* Return source titles, snippets, and relevance scores.
-* React and TypeScript user interface.
-* FastAPI endpoints, validation, error handling, and logging.
+- Save text notes and public webpage URLs.
+- Extract readable text from webpages.
+- Store knowledge items in SQLite.
+- Retrieve relevant passages using semantic embeddings.
+- Generate grounded answers using a local Ollama model.
+- Display source titles, content snippets, and relevance scores.
+- Responsive React and TypeScript frontend.
+- FastAPI backend with validation and error handling.
 
-## Tech stack
+## Tech Stack
 
-* Frontend: React, TypeScript, Vite
-* Backend: Python, FastAPI
-* Database: SQLite, SQLAlchemy
-* Semantic retrieval: Sentence Transformers, NumPy
-* Answer generation: Ollama with Llama 3.2
+- **Frontend:** React, TypeScript, Vite
+- **Backend:** Python, FastAPI
+- **Database:** SQLite, SQLAlchemy
+- **Semantic Retrieval:** Sentence Transformers, NumPy
+- **AI Generation:** Ollama, Llama 3.2
 
-## Run locally
+## Prerequisites
 
-### Backend
+- Python
+- Node.js and npm
+- Ollama with the `llama3.2` model
 
-From the project root, activate the existing virtual environment and start the API:
+## Run Locally
 
-```
-.venv\Scripts\Activate.ps1
+### 1. Start the Backend
+
+From the project root, open a terminal and run:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
 cd backend
 python -m uvicorn main:app --reload
 ```
 
 API documentation: http://localhost:8000/docs
 
-### Frontend
+### 2. Start the Frontend
 
-Open a separate terminal:
+Open a second terminal from the project root:
 
-```
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite, usually http://localhost:5173.
+Open the URL displayed by Vite, usually http://localhost:5173.
 
-### AI model
+### 3. Start AI Answer Generation
 
-Install Ollama and download the model:
+Ensure Ollama is installed and running. Download the model if needed:
 
-```
+```powershell
 ollama pull llama3.2
 ```
 
-Ensure Ollama is running when you want generated answers. If generation is unavailable, the API returns relevant source passages with a fallback response.
+The application uses the local model to generate answers from retrieved passages. If generation is unavailable, the backend can return a retrieval fallback.
 
-## API endpoints
+## API Endpoints
 
-* `POST /ingest` — save a note or ingest a webpage.
-* `GET /items` — list saved knowledge items.
-* `POST /query` — retrieve relevant passages and generate an answer.
-* `GET /health` — health check.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/health` | Check backend health |
+| POST | `/ingest` | Save a note or ingest a webpage |
+| GET | `/items` | List saved knowledge items |
+| POST | `/query` | Retrieve relevant passages and generate an answer |
 
-## Design decisions
+## Design Decisions
 
-SQLite keeps local setup simple. Sentence Transformer embeddings enable semantic retrieval without requiring a paid embedding API. Retrieved passages are provided to the language model as context, and the response includes source snippets to support verification. Local Ollama avoids mandatory paid model access.
+SQLite keeps local setup simple. Sentence Transformers provides semantic retrieval without requiring a paid embedding API. Retrieved passages are supplied to the language model as context, and source snippets help users verify answers. Local Ollama avoids mandatory paid model access.
 
 ## Limitations
 
-* Web ingestion requires publicly accessible HTML pages.
-* Dynamic webpages and PDFs are not supported by the current extractor.
-* AI answer generation depends on the local Ollama model.
-* This is a minimal assignment implementation, not a production deployment.
+- Web ingestion is intended for publicly accessible HTML pages.
+- Dynamic webpages and PDFs are not supported by the current extractor.
+- AI answer generation depends on the local Ollama model.
+- This is a minimal assignment implementation, not a production deployment.
