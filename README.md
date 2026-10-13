@@ -3,18 +3,10 @@
 A full-stack AI knowledge inbox for saving notes and public webpages, then asking natural-language questions answered from that saved content with numbered source citations (RAG).
 
 ## Screenshots
-
-### Save notes and webpages
-![Home page with URL saved successfully](C:\Users\visha\OneDrive\Pictures\Screenshots\Screenshot 2026-10-14 004528.png)
-
-### Write a note
-![Adding a note](c:\Users\visha\OneDrive\Pictures\Screenshots\Screenshot 2026-10-14 002853.png)
-
-### Ask a question: AI answer with cited sources
-![AI answer with citations and source cards](c:\Users\visha\OneDrive\Pictures\Screenshots\Screenshot 2026-10-14 002703.png)
-
-### Your library
-![Saved notes and web pages](c:\Users\visha\OneDrive\Pictures\Screenshots\Screenshot 2026-10-14 002718.png)
+![Home page with URL saved successfully](docs/screenshots/01-home.png)
+![Adding a note](docs/screenshots/02-add-note.png)
+![AI answer with citations and source cards](docs/screenshots/03-answer-sources.png)
+![Saved notes and web pages](docs/screenshots/04-library.png)
 
 ## Features
 
