@@ -73,6 +73,7 @@ class QueryRequest(BaseModel):
 
 def serialize_item(item: KnowledgeItem):
     created_at = item.created_at
+
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
 
@@ -80,6 +81,7 @@ def serialize_item(item: KnowledgeItem):
         "id": item.id,
         "title": item.title,
         "item_type": item.item_type,
+        "content": item.content,
         "source_url": item.source_url,
         "created_at": created_at.isoformat(),
     }
@@ -97,10 +99,12 @@ def is_public_url(url: str) -> bool:
             parsed.port or (443 if parsed.scheme == "https" else 80),
             type=socket.SOCK_STREAM,
         )
+
         return bool(addresses) and all(
             ipaddress.ip_address(address[4][0]).is_global
             for address in addresses
         )
+
     except (OSError, ValueError):
         return False
 
@@ -135,6 +139,7 @@ async def ingest_item(
             )
 
         title = (payload.title or content[:60]).strip()
+
         if not title:
             title = "Untitled note"
 
@@ -161,7 +166,9 @@ async def ingest_item(
             ) as client:
                 response = await client.get(
                     source_url,
-                    headers={"User-Agent": "TuriumKnowledgeInbox/1.0"},
+                    headers={
+                        "User-Agent": "TuriumKnowledgeInbox/1.0"
+                    },
                 )
                 response.raise_for_status()
 
@@ -176,14 +183,25 @@ async def ingest_item(
             soup = BeautifulSoup(response.text, "html.parser")
 
             for tag in soup(
-                ["script", "style", "nav", "footer", "header", "noscript"]
+                [
+                    "script",
+                    "style",
+                    "nav",
+                    "footer",
+                    "header",
+                    "noscript",
+                ]
             ):
                 tag.decompose()
 
             page_title = (
-                soup.title.get_text(strip=True) if soup.title else None
+                soup.title.get_text(strip=True)
+                if soup.title
+                else None
             )
+
             content = soup.get_text(" ", strip=True)[:50000]
+
             title = (
                 (payload.title or "").strip()
                 or page_title
@@ -199,8 +217,13 @@ async def ingest_item(
 
         except HTTPException:
             raise
+
         except httpx.HTTPError as exc:
-            logger.warning("URL ingestion failed: %s", type(exc).__name__)
+            logger.warning(
+                "URL ingestion failed: %s",
+                type(exc).__name__,
+            )
+
             raise HTTPException(
                 status_code=422,
                 detail="Could not fetch the webpage. Check its URL and accessibility.",
@@ -217,15 +240,22 @@ async def ingest_item(
         db.add(item)
         db.commit()
         db.refresh(item)
+
     except Exception as exc:
         db.rollback()
         logger.exception("Failed to save knowledge item")
+
         raise HTTPException(
             status_code=500,
             detail="Could not save the knowledge item.",
         ) from exc
 
-    logger.info("Created item id=%s type=%s", item.id, item.item_type)
+    logger.info(
+        "Created item id=%s type=%s",
+        item.id,
+        item.item_type,
+    )
+
     return serialize_item(item)
 
 
@@ -236,6 +266,7 @@ def list_items(db: Session = Depends(get_db)):
         .order_by(KnowledgeItem.created_at.desc())
         .all()
     )
+
     return [serialize_item(item) for item in items]
 
 
@@ -266,8 +297,10 @@ async def query_knowledge(
             question,
             items,
         )
+
     except Exception as exc:
         logger.exception("Semantic retrieval failed")
+
         raise HTTPException(
             status_code=500,
             detail="Knowledge retrieval failed. Please try again.",
@@ -332,6 +365,7 @@ async def query_knowledge(
                 },
             )
             response.raise_for_status()
+
             generated = response.json().get("response", "").strip()
 
         if generated:

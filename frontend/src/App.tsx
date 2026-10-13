@@ -1,419 +1,533 @@
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:8000";
+const API_URL = (
+  import.meta.env.VITE_API_URL ?? "http://localhost:8000"
+).replace(/\/+$/, "");
 
-interface KnowledgeItem {
-id: number;
-title: string;
-item_type: "note" | "url";
-source_url: string | null;
-created_at: string;
+type KnowledgeItem = {
+  id: number;
+  title: string;
+  content: string;
+  source_url?: string | null;
+  item_type: string;
+  created_at?: string;
+};
+
+type Source = {
+  item_id?: number;
+  title: string;
+  text: string;
+  source_url?: string | null;
+  item_type?: string;
+  score?: number;
+};
+
+type QueryResult = {
+  answer: string;
+  sources: Source[];
+};
+
+type ApiError = {
+  detail?: string | { msg?: string }[];
+};
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error(
+      `Cannot connect to the backend at ${API_URL}. Make sure the FastAPI server is running.`,
+    );
+  }
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+
+    try {
+      const error = (await response.json()) as ApiError;
+
+      if (typeof error.detail === "string") {
+        message = error.detail;
+      } else if (Array.isArray(error.detail)) {
+        message = error.detail
+          .map((item) => item.msg ?? "Invalid request")
+          .join(", ");
+      }
+    } catch {
+      // Keep the HTTP status message when the response isn't JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return (await response.json()) as T;
 }
 
-interface Source {
-item_id: number;
-title: string;
-source_url: string | null;
-snippet: string;
-relevance_score: number;
-}
+function formatDate(value?: string): string {
+  if (!value) return "Date unavailable";
 
-interface QueryResult {
-question: string;
-answer: string;
-sources: Source[];
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString();
 }
 
 function App() {
-const [items, setItems] = useState<KnowledgeItem[]>([]);
-const [itemType, setItemType] = useState<"note" | "url">("note");
-const [title, setTitle] = useState("");
-const [content, setContent] = useState("");
-const [url, setUrl] = useState("");
-const [question, setQuestion] = useState("");
-const [result, setResult] = useState<QueryResult | null>(null);
-const [loading, setLoading] = useState(false);
-const [asking, setAsking] = useState(false);
-const [error, setError] = useState("");
-const [message, setMessage] = useState("");
+  const [items, setItems] = useState<KnowledgeItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [submittingItem, setSubmittingItem] = useState(false);
+  const [askingQuestion, setAskingQuestion] = useState(false);
 
-async function loadItems(): Promise<void> {
-try {
-const response = await fetch(`${API_URL}/items`);
+  const [itemType, setItemType] = useState<"note" | "url">("note");
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
 
-  if (!response.ok) {
-    throw new Error("Could not load saved items.");
+  const [question, setQuestion] = useState("");
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
+
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const loadItems = useCallback(async () => {
+    setLoadingItems(true);
+
+    try {
+      const data = await apiRequest<KnowledgeItem[]>("/items");
+      setItems(data);
+      setError("");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load your library.",
+      );
+    } finally {
+      setLoadingItems(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadItems();
+  }, [loadItems]);
+
+  async function handleAddItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    const cleanTitle = title.trim();
+    const cleanContent = content.trim();
+    const cleanUrl = sourceUrl.trim();
+
+    if (!cleanTitle) {
+      setError("Please enter a title.");
+      return;
+    }
+
+    if (itemType === "note" && !cleanContent) {
+      setError("Please enter the note content.");
+      return;
+    }
+
+    if (itemType === "url") {
+      if (!cleanUrl) {
+        setError("Please enter a URL.");
+        return;
+      }
+
+      try {
+        const parsedUrl = new URL(cleanUrl);
+
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          setError("Only HTTP and HTTPS URLs are supported.");
+          return;
+        }
+      } catch {
+        setError("Please enter a valid URL.");
+        return;
+      }
+    }
+
+    setSubmittingItem(true);
+
+    try {
+      const payload =
+        itemType === "note"
+          ? {
+              title: cleanTitle,
+              content: cleanContent,
+              item_type: "note",
+              source_url: null,
+            }
+          : {
+              title: cleanTitle,
+              content: "",
+              item_type: "url",
+              source_url: cleanUrl,
+            };
+
+      await apiRequest<KnowledgeItem>("/ingest", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setTitle("");
+      setContent("");
+      setSourceUrl("");
+      setSuccess(
+        itemType === "note"
+          ? "Note saved successfully."
+          : "URL processed successfully.",
+      );
+
+      await loadItems();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save the item.",
+      );
+    } finally {
+      setSubmittingItem(false);
+    }
   }
 
-  const data: KnowledgeItem[] = await response.json();
-  setItems(data);
-  setError("");
-} catch {
-  setError(
-    "Cannot connect to the backend. Make sure FastAPI is running at http://localhost:8000.",
-  );
-}
+  async function handleAskQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
+    const cleanQuestion = question.trim();
 
-}
+    if (!cleanQuestion) {
+      setError("Enter a question first.");
+      return;
+    }
 
-useEffect(() => {
-void loadItems();
-}, []);
+    setError("");
+    setSuccess("");
+    setAskingQuestion(true);
+    setQueryResult(null);
 
-async function handleIngest(
-event: FormEvent<HTMLFormElement>,
-): Promise<void> {
-event.preventDefault();
-setLoading(true);
-setError("");
-setMessage("");
+    try {
+      const result = await apiRequest<QueryResult>("/query", {
+        method: "POST",
+        body: JSON.stringify({ question: cleanQuestion }),
+      });
 
-
-const payload =
-  itemType === "note"
-    ? { item_type: "note", title: title.trim(), content: content.trim() }
-    : {
-        item_type: "url",
-        title: title.trim() || undefined,
-        url: url.trim(),
-      };
-
-try {
-  const response = await fetch(`${API_URL}/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data: unknown = await response.json();
-
-  if (!response.ok) {
-    const detail =
-      typeof data === "object" &&
-      data !== null &&
-      "detail" in data &&
-      typeof data.detail === "string"
-        ? data.detail
-        : "Could not save this item.";
-
-    throw new Error(detail);
+      setQueryResult(result);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to answer your question.",
+      );
+    } finally {
+      setAskingQuestion(false);
+    }
   }
 
-  setMessage("Knowledge saved successfully.");
-  setTitle("");
-  setContent("");
-  setUrl("");
-  await loadItems();
-} catch (err: unknown) {
-  setError(
-    err instanceof Error ? err.message : "Something went wrong.",
-  );
-} finally {
-  setLoading(false);
-}
-
-
-}
-
-async function handleQuery(
-event: FormEvent<HTMLFormElement>,
-): Promise<void> {
-event.preventDefault();
-setAsking(true);
-setError("");
-setMessage("");
-setResult(null);
-
-try {
-  const response = await fetch(`${API_URL}/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question: question.trim() }),
-  });
-
-  const data: unknown = await response.json();
-
-  if (!response.ok) {
-    const detail =
-      typeof data === "object" &&
-      data !== null &&
-      "detail" in data &&
-      typeof data.detail === "string"
-        ? data.detail
-        : "Could not search your knowledge.";
-
-    throw new Error(detail);
-  }
-
-  setResult(data as QueryResult);
-} catch (err: unknown) {
-  setError(
-    err instanceof Error ? err.message : "Something went wrong.",
-  );
-} finally {
-  setAsking(false);
-}
-
-
-}
-
-return ( <main className="app-shell"> <header className="topbar"> <a className="brand" href="/"> <span className="brand-mark">K</span> <span>Knowledge Inbox</span> </a> <span className="status"> <span className="status-dot" />
-Your personal knowledge space </span> </header>
-
-  <section className="hero">
-    <p className="eyebrow">TURIUM AI · KNOWLEDGE INBOX</p>
-    <h1>
-      Your knowledge,
-      <br />
-      <span>ready when you need it.</span>
-    </h1>
-    <p className="hero-copy">
-      Save notes and web pages in one place. Ask questions and discover
-      relevant information with source snippets you can verify.
-    </p>
-  </section>
-
-  <section className="workspace">
-    <div className="panel">
-      <div className="panel-heading">
+  return (
+    <main className="app-container">
+      <header className="app-header">
         <div>
-          <p className="section-label">COLLECT</p>
-          <h2>Add to your knowledge</h2>
-        </div>
-        <span className="heading-icon">+</span>
-      </div>
-
-      <div className="tabs">
-        <button
-          type="button"
-          className={itemType === "note" ? "tab active" : "tab"}
-          onClick={() => setItemType("note")}
-        >
-          Write a note
-        </button>
-        <button
-          type="button"
-          className={itemType === "url" ? "tab active" : "tab"}
-          onClick={() => setItemType("url")}
-        >
-          Save a URL
-        </button>
-      </div>
-
-      <form className="form-stack" onSubmit={handleIngest}>
-        <label htmlFor="title">Title (optional)</label>
-        <input
-          id="title"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Give it a memorable name"
-          maxLength={300}
-        />
-
-        {itemType === "note" ? (
-          <>
-            <label htmlFor="content">Your note</label>
-            <textarea
-              id="content"
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              placeholder="Capture an idea, insight, or something you want to remember..."
-              rows={6}
-              maxLength={50000}
-              required
-            />
-          </>
-        ) : (
-          <>
-            <label htmlFor="url">Webpage URL</label>
-            <input
-              id="url"
-              type="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://example.com/article"
-              required
-            />
-            <p className="field-hint">
-              Use a publicly accessible webpage.
-            </p>
-          </>
-        )}
-
-        <button
-          className="primary-button"
-          type="submit"
-          disabled={loading}
-        >
-          {loading ? "Saving..." : "Save to inbox"} <span>→</span>
-        </button>
-      </form>
-    </div>
-
-    <div className="panel">
-      <div className="panel-heading">
-        <div>
-          <p className="section-label">RETRIEVE</p>
-          <h2>Ask your knowledge</h2>
-        </div>
-        <span className="heading-icon">✳</span>
-      </div>
-
-      <p className="panel-description">
-        Search your saved notes and webpages using natural language.
-      </p>
-
-      <form className="form-stack" onSubmit={handleQuery}>
-        <label htmlFor="question">What would you like to know?</label>
-        <textarea
-          id="question"
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="For example: What did I save about RAG?"
-          rows={4}
-          minLength={2}
-          maxLength={1000}
-          required
-        />
-        <button
-          className="primary-button"
-          type="submit"
-          disabled={asking}
-        >
-          {asking ? "Searching..." : "Find answers"} <span>→</span>
-        </button>
-      </form>
-
-      {result !== null ? (
-        <div className="answer-section">
-          <p className="section-label">SEARCH RESULTS</p>
-          <h3>{result.answer}</h3>
-
-          {result.sources.length === 0 ? (
-            <p className="muted">No matching passages were found.</p>
-          ) : (
-            result.sources.map((source, index) => (
-              <article
-                className="source-card"
-                key={`${source.item_id}-${index}`}
-              >
-                <div className="source-heading">
-                  <span className="source-number">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <strong>{source.title}</strong>
-                </div>
-
-                <p>{source.snippet}</p>
-
-                <div className="source-footer">
-                  <span>
-                    Relevance:{" "}
-                    {(source.relevance_score * 100).toFixed(1)}%
-                  </span>
-                  {source.source_url !== null && (
-                    <a
-                      href={source.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open source ↗
-                    </a>
-                  )}
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      ) : (
-        <div className="query-hint">
-          <span>✦</span>
-          <p>
-            Search results include relevant passages from your saved
-            knowledge.
+          <p className="eyebrow">TURIUM AI</p>
+          <h1>Knowledge Inbox</h1>
+          <p className="subtitle">
+            Save useful information, find it later, and ask questions about
+            your knowledge.
           </p>
         </div>
+
+        <div className="library-count">
+          <span>{items.length}</span>
+          <small>Saved items</small>
+        </div>
+      </header>
+
+      {error && (
+        <div className="message error-message" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="message-close"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
       )}
-    </div>
-  </section>
 
-  {(error !== "" || message !== "") && (
-    <div
-      className={error !== "" ? "notice error-notice" : "notice success-notice"}
-      role="status"
-    >
-      {error || message}
-    </div>
-  )}
+      {success && (
+        <div className="message success-message" role="status">
+          <span>{success}</span>
+          <button
+            type="button"
+            className="message-close"
+            onClick={() => setSuccess("")}
+            aria-label="Dismiss message"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
-  <section className="library-section">
-    <div className="library-heading">
-      <div>
-        <p className="section-label">YOUR LIBRARY</p>
-        <h2>
-          Saved knowledge <span className="count">{items.length}</span>
-        </h2>
-      </div>
-      <button
-        className="refresh-button"
-        type="button"
-        onClick={() => void loadItems()}
-      >
-        ↻ Refresh
-      </button>
-    </div>
-
-    {items.length === 0 ? (
-      <div className="empty-state">
-        <span>▤</span>
-        <h3>Your inbox is ready</h3>
-        <p>
-          Save your first note or webpage to start building your knowledge
-          library.
-        </p>
-      </div>
-    ) : (
-      <div className="items-grid">
-        {items.map((item) => (
-          <article className="item-card" key={item.id}>
-            <div className="item-topline">
-              <span className={`type-tag ${item.item_type}`}>
-                {item.item_type === "note" ? "NOTE" : "WEB PAGE"}
-              </span>
-              <span className="item-date">
-                {new Date(item.created_at).toLocaleDateString()}
-              </span>
+      <section className="workspace">
+        <div className="panel add-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">CAPTURE</p>
+              <h2>Add to your inbox</h2>
             </div>
+          </div>
 
-            <h3>{item.title}</h3>
+          <div className="type-switch" role="group" aria-label="Item type">
+            <button
+              type="button"
+              className={itemType === "note" ? "type-button active" : "type-button"}
+              onClick={() => setItemType("note")}
+              aria-pressed={itemType === "note"}
+            >
+              Note
+            </button>
 
-            {item.source_url !== null && (
-              <a
-                className="item-link"
-                href={item.source_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {item.source_url} ↗
-              </a>
+            <button
+              type="button"
+              className={itemType === "url" ? "type-button active" : "type-button"}
+              onClick={() => setItemType("url")}
+              aria-pressed={itemType === "url"}
+            >
+              Web URL
+            </button>
+          </div>
+
+          <form onSubmit={handleAddItem} className="form-stack">
+            <label htmlFor="item-title">Title</label>
+            <input
+              id="item-title"
+              type="text"
+              placeholder="Give this item a title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={200}
+              required
+            />
+
+            {itemType === "note" ? (
+              <>
+                <label htmlFor="item-content">Content</label>
+                <textarea
+                  id="item-content"
+                  placeholder="Write or paste your notes here..."
+                  value={content}
+                  onChange={(event) => setContent(event.target.value)}
+                  rows={6}
+                  required
+                />
+              </>
+            ) : (
+              <>
+                <label htmlFor="item-url">Web address</label>
+                <input
+                  id="item-url"
+                  type="url"
+                  placeholder="https://example.com/article"
+                  value={sourceUrl}
+                  onChange={(event) => setSourceUrl(event.target.value)}
+                  required
+                />
+                <p className="field-hint">
+                  The backend will retrieve the page content if the URL is
+                  accessible.
+                </p>
+              </>
             )}
-          </article>
-        ))}
-      </div>
-    )}
-  </section>
 
-  <footer className="footer">
-    <span>Knowledge Inbox</span>
-    <span>Save thoughtfully. Find instantly.</span>
-  </footer>
-</main>
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={submittingItem}
+            >
+              {submittingItem
+                ? "Saving..."
+                : itemType === "note"
+                  ? "Save note"
+                  : "Save URL"}
+            </button>
+          </form>
+        </div>
 
+        <div className="panel query-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">RETRIEVE</p>
+              <h2>Ask your knowledge</h2>
+            </div>
+          </div>
 
-);
+          <p className="panel-description">
+            Ask a question about the information you have saved. Answers are
+            generated using relevant retrieved passages.
+          </p>
+
+          <form onSubmit={handleAskQuestion} className="form-stack">
+            <label htmlFor="question">Your question</label>
+            <textarea
+              id="question"
+              placeholder="What would you like to know?"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              rows={4}
+              required
+            />
+
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={askingQuestion}
+            >
+              {askingQuestion ? "Searching your knowledge..." : "Ask question"}
+            </button>
+          </form>
+
+          {askingQuestion && (
+            <p className="field-hint" role="status">
+              Finding relevant passages and generating an answer...
+            </p>
+          )}
+
+          {queryResult && (
+            <section className="answer-section" aria-live="polite">
+              <p className="eyebrow">AI RESPONSE</p>
+              <h2>Answer</h2>
+              <div className="answer-content">
+                {queryResult.answer}
+              </div>
+
+              <div className="sources-heading">
+                <h3>Sources</h3>
+                <span>{queryResult.sources.length}</span>
+              </div>
+
+              {queryResult.sources.length === 0 ? (
+                <p className="empty-state">
+                  No source passages were returned for this answer.
+                </p>
+              ) : (
+                <div className="source-list">
+                  {queryResult.sources.map((source, index) => (
+                    <article
+                      className="source-card"
+                      key={`${source.item_id ?? source.title}-${index}`}
+                    >
+                      <div className="source-card-header">
+                        <h4>{source.title}</h4>
+                        {typeof source.score === "number" && (
+                          <span className="source-score">
+                            Relevance: {source.score.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="source-snippet">{source.text}</p>
+
+                      {source.source_url && (
+                        <a
+                          className="source-link"
+                          href={source.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open original source ↗
+                        </a>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </section>
+
+      <section className="panel library-panel">
+        <div className="section-heading library-heading">
+          <div>
+            <p className="eyebrow">YOUR COLLECTION</p>
+            <h2>Your Library</h2>
+            <p className="panel-description">
+              Notes and web pages available for retrieval.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void loadItems()}
+            disabled={loadingItems}
+          >
+            {loadingItems ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+
+        {loadingItems ? (
+          <p className="empty-state">Loading your library...</p>
+        ) : items.length === 0 ? (
+          <div className="empty-state">
+            <h3>Your inbox is empty</h3>
+            <p>Add a note or URL to start building your knowledge library.</p>
+          </div>
+        ) : (
+          <div className="library-list">
+            {items.map((item) => (
+              <article className="library-item" key={item.id}>
+                <div className="library-item-top">
+                  <span className="item-type">
+                    {item.item_type === "url" ? "WEB PAGE" : "NOTE"}
+                  </span>
+                  <span className="item-date">
+                    {formatDate(item.created_at)}
+                  </span>
+                </div>
+
+                <h3>{item.title}</h3>
+
+                <p className="library-content">
+                  {item.content
+                    ? item.content.length > 240
+                      ? `${item.content.slice(0, 240)}…`
+                      : item.content
+                    : "No content preview available."}
+                </p>
+
+                {item.source_url && (
+                  <a
+                    className="source-link"
+                    href={item.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Visit original page ↗
+                  </a>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <footer className="app-footer">
+        Turium AI Knowledge Inbox · Retrieval grounded in your saved content
+      </footer>
+    </main>
+  );
 }
 
 export default App;

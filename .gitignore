@@ -16,3 +16,4 @@ chroma_db/
 .vscode/
 .idea/
 ```
+n# Persistent vector databasenbackend/chroma_db/
