@@ -24,8 +24,6 @@ A full-stack AI knowledge management application for saving notes and public web
 
 ## Prerequisites
 
-Install the following before running the application:
-
 - Python 3.11 or a compatible version
 - Node.js and npm
 - [Ollama](https://ollama.com/) for local AI answer generation
@@ -58,13 +56,13 @@ source .venv/bin/activate
 
 ### 3. Install backend dependencies
 
-Run this command from the project root after activating the virtual environment:
+Run from the project root after activating the virtual environment:
 
 ```bash
 python -m pip install -r backend/requirements.txt
 ```
 
-On the first run, Sentence Transformers downloads the `all-MiniLM-L6-v2` embedding model. The download is approximately 90 MB and may take a few minutes depending on your connection.
+The first run may download the Sentence Transformers embedding model and take a few minutes.
 
 ### 4. Start the backend
 
@@ -75,11 +73,7 @@ cd backend
 python -m uvicorn main:app --reload
 ```
 
-The API will be available at:
-
-- API: http://localhost:8000
-- Interactive API documentation: http://localhost:8000/docs
-- Health check: http://localhost:8000/health
+Open the API documentation at http://localhost:8000/docs.
 
 Keep this terminal running.
 
@@ -93,7 +87,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL displayed by Vite, usually http://localhost:5173.
+Open the URL displayed by Vite, usually http://localhost:5173.
 
 ### 6. Enable AI answer generation
 
@@ -103,7 +97,7 @@ Install and start Ollama, then download the model:
 ollama pull llama3.2
 ```
 
-Make sure Ollama is running and the model is available locally. The application uses the model to generate answers based on retrieved passages.
+Make sure Ollama is running and the model is available locally.
 
 ## API Endpoints
 
@@ -117,16 +111,16 @@ Make sure Ollama is running and the model is available locally. The application 
 
 ## Design Decisions
 
-- **SQLite:** Keeps local setup simple without requiring a separate database server.
-- **Sentence Transformers:** Creates semantic embeddings locally instead of requiring a paid embedding API.
-- **Semantic retrieval:** Finds saved passages relevant to a user's question.
-- **Source citations:** Displays retrieved content so users can verify the information used in an answer.
-- **Local LLM:** Ollama allows answer generation without mandatory paid model access.
+- **SQLite:** Simplifies local setup without a separate database server.
+- **Sentence Transformers:** Creates semantic embeddings locally.
+- **Semantic retrieval:** Finds passages relevant to a user's question.
+- **Source citations:** Helps users verify the information used in answers.
+- **Local LLM:** Ollama enables answer generation without mandatory paid model access.
 
 ## Limitations
 
 - Web ingestion is intended for publicly accessible HTML pages.
 - Dynamic webpages and PDFs are not supported by the current extractor.
-- Some websites may block automated requests or restrict access.
-- AI answer generation depends on the local Ollama model being available.
-- The current implementation is a minimal interview assignment, not a production-ready service.
+- Some websites may block automated requests.
+- AI answer generation depends on the local Ollama model.
+- This is a minimal interview assignment, not a production-ready service.
